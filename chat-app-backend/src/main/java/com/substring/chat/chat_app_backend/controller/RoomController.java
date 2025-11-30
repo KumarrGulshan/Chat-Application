@@ -3,9 +3,11 @@ package com.substring.chat.chat_app_backend.controller;
 import com.substring.chat.chat_app_backend.entities.Message;
 import com.substring.chat.chat_app_backend.entities.Room;
 import com.substring.chat.chat_app_backend.repository.RoomRepository;
+import org.springframework.security.core.Authentication;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -25,27 +27,38 @@ public class RoomController {
 
     // create room
 
-    @PostMapping
-    public ResponseEntity<?> createRoom(@RequestBody String roomId){
-        if (roomRepository.findByRoomId(roomId)!=null){
-            // room is already there
-            return ResponseEntity.badRequest().body("Room already exists!");
-        }
-        // create new room
+   @PostMapping
+    public ResponseEntity<?> createRoom(@RequestBody String roomId) {
+      Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+      if (auth == null || auth.getName() == null) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+      }
+      if (roomRepository.findByRoomId(roomId) != null) {
+        return ResponseEntity.badRequest().body("Room already exists!");
+      }
         Room room = new Room();
         room.setRoomId(roomId);
+        room.getMembers().add(auth.getName());
         Room savedRoom = roomRepository.save(room);
-        return ResponseEntity.status(HttpStatus.CREATED).body(room);
+        return ResponseEntity.status(HttpStatus.CREATED).body(savedRoom);
     }
 
     @GetMapping("/{roomId}")
-    public ResponseEntity<?> joinRoom(@PathVariable  String roomId) {
-       Room room = roomRepository.findByRoomId(roomId);
-       if(room == null){
-           return ResponseEntity.badRequest().body("Room not found!!");
+     public ResponseEntity<?> joinRoom(@PathVariable String roomId) {
+      Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+      if (auth == null || auth.getName() == null) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+      }
+        Room room = roomRepository.findByRoomId(roomId);
+        if (room == null) {
+        return ResponseEntity.badRequest().body("Room not found!!");
        }
-       return ResponseEntity.ok(room);
-    }
+       if (!room.getMembers().contains(auth.getName())) {
+        room.getMembers().add(auth.getName());
+        roomRepository.save(room);
+      }
+    return ResponseEntity.ok(room);
+  }
 
     @GetMapping("/{roomId}/messages")
     public ResponseEntity<List<Message>> getMessages(

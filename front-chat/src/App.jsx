@@ -1,16 +1,12 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
 import './App.css'
-import JoinCreateChat from './components/JoinCreateChat'
 
 function App() {
-
   return (
-    <div >
-      <JoinCreateChat/>
+    <div>
+      {/* Home Page */}
+      <h1 className="text-center p-5 text-xl">Welcome to Chat App</h1>
     </div>
   )
 }
 
-export default App
+export default App;

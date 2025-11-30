@@ -1,0 +1,58 @@
+import { useState } from "react";
+import { loginApi } from "../services/AuthService";
+import toast from "react-hot-toast";
+import { useNavigate } from "react-router";
+import { useChatContext } from "../Context/ChatContext"; // ✅ import ChatContext
+
+function Login() {
+  const { setToken } = useChatContext(); // ✅ get setToken from context
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const navigate = useNavigate();
+
+  const login = async () => {
+  if (!username || !password) return toast.error("Enter username and password");
+  try {
+    const token = await loginApi(username, password);
+    setToken(token);  // ✅ sets token in context
+    localStorage.setItem("token", token); // ✅ MUST store in localStorage
+    toast.success("Login successful");
+    navigate("/room");
+  } catch (e) {
+    toast.error(e?.response?.data || "Invalid credentials");
+  }
+};
+  return (
+    <div className="p-10 max-w-md mx-auto">
+      <h2 className="text-xl mb-4">Login</h2>
+      <input
+        className="w-full p-2 mb-2 border"
+        placeholder="Username"
+        onChange={(e) => setUsername(e.target.value)}
+      />
+      <input
+        className="w-full p-2 mb-2 border"
+        placeholder="Password"
+        type="password"
+        onChange={(e) => setPassword(e.target.value)}
+      />
+      <button
+        className="w-full p-2 bg-blue-600 text-white"
+        onClick={login}
+      >
+        Login
+      </button>
+      <p className="mt-4 text-center">
+        Don't have an account?{" "}
+        <span
+          onClick={() => navigate("/register")}
+          className="text-blue-600 cursor-pointer"
+        >
+          Register
+        </span>
+      </p>
+    </div>
+  );
+}
+
+export default Login;
