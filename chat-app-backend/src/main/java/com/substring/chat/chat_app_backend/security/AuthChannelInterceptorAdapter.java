@@ -26,19 +26,22 @@ public class AuthChannelInterceptorAdapter implements ChannelInterceptor {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
         StompCommand command = accessor.getCommand();
 
-        // Only intercept CONNECT, SEND, SUBSCRIBE
         if (command == StompCommand.CONNECT) {
             handleConnect(accessor);
-        } else if (command == StompCommand.SEND || command == StompCommand.SUBSCRIBE) {
-            if (accessor.getUser() == null) {
-                throw new IllegalArgumentException("Unauthorized user!");
-            }
+        }
+        else if (command == StompCommand.SEND) {
+            handleSend(accessor);
         }
 
         return message;
     }
 
+    /**
+     * Handles authentication during WebSocket CONNECT frame.
+     * Extracts token → validates → loads user → stores user in session.
+     */
     private void handleConnect(StompHeaderAccessor accessor) {
+
         String authHeader = accessor.getFirstNativeHeader("Authorization");
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
@@ -46,17 +49,39 @@ public class AuthChannelInterceptorAdapter implements ChannelInterceptor {
         }
 
         String token = authHeader.substring(7);
-        try {
-            String username = jwtUtil.validateAndGetSubject(token);
 
-            if (username != null && userRepository.findByUsername(username) != null) {
-                // No roles yet; you can add roles if your User entity has them
-                accessor.setUser(new UsernamePasswordAuthenticationToken(username, null, List.of()));
-            } else {
-                throw new IllegalArgumentException("Invalid token or user");
-            }
-        } catch (Exception ex) {
+        String username;
+        try {
+            username = jwtUtil.validateAndGetSubject(token);
+        } catch (Exception e) {
             throw new IllegalArgumentException("Invalid token");
         }
+
+        if (username == null || userRepository.findByUsername(username) == null) {
+            throw new IllegalArgumentException("User not found or invalid token");
+        }
+
+        UsernamePasswordAuthenticationToken auth =
+                new UsernamePasswordAuthenticationToken(username, null, List.of());
+
+        // Set authenticated user on WebSocket connection
+        accessor.setUser(auth);
+
+        // ⭐ Store user in session for future SEND messages
+        accessor.getSessionAttributes().put("user", auth);
+    }
+
+    /**
+     * Handles authentication during SEND frame.
+     * Loads the user stored in session from CONNECT step.
+     */
+    private void handleSend(StompHeaderAccessor accessor) {
+        Object sessionUser = accessor.getSessionAttributes().get("user");
+
+        if (sessionUser == null) {
+            throw new IllegalArgumentException("Unauthenticated user");
+        }
+
+        accessor.setUser((UsernamePasswordAuthenticationToken) sessionUser);
     }
 }

@@ -37,7 +37,7 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .cors(cors -> cors.configurationSource(corsConfigurationSource())) // ✅ enable CORS here
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/v1/auth/**").permitAll()
+                .requestMatchers("/api/v1/auth/**").permitAll() // login/register
                 .requestMatchers("/ws/**", "/chat/**").permitAll()
                 .requestMatchers("/topic/**", "/app/**").permitAll()
                 .requestMatchers("/api/v1/rooms/**").authenticated()

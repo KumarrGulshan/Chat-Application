@@ -1,7 +1,6 @@
 package com.substring.chat.chat_app_backend.security;
 
-
-import com.substring.chat.chat_app_backend.repository.UserRepository; // adjust this import to your package
+import com.substring.chat.chat_app_backend.repository.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,6 +29,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
+        String path = request.getServletPath();
+
+        // 🚨 VERY IMPORTANT:
+        // Skip JWT filter for login and register endpoints
+        if (path.startsWith("/api/v1/auth")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        // Read Authorization header
         String authHeader = request.getHeader("Authorization");
 
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
@@ -37,32 +46,29 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String token = authHeader.substring(7); // remove "Bearer "
 
             try {
-                // ⛔ No deprecated parsing anymore — uses JwtUtil's modern parser
+                // Validate JWT and extract username
                 String username = jwtUtil.validateAndGetSubject(token);
 
                 if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
 
-                    // Check if user exists in DB
                     var user = userRepository.findByUsername(username);
+
                     if (user != null) {
                         UsernamePasswordAuthenticationToken authentication =
                                 new UsernamePasswordAuthenticationToken(
                                         username,
                                         null,
-                                        List.of() // add roles if needed
+                                        List.of() // Add roles later if needed
                                 );
 
-                        // ⬅️ set authentication inside security context
                         SecurityContextHolder.getContext().setAuthentication(authentication);
                     }
                 }
 
             } catch (io.jsonwebtoken.ExpiredJwtException ex) {
-                // Token expired
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                 return;
             } catch (io.jsonwebtoken.JwtException ex) {
-                // Invalid token (signature, malformed, unsupported)
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                 return;
             }

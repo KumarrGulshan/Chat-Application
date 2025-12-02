@@ -18,7 +18,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private final JwtUtil jwtUtil;
     private final UserRepository userRepository;
 
-    // Inject JwtUtil and UserRepository
     public WebSocketConfig(JwtUtil jwtUtil, UserRepository userRepository) {
         this.jwtUtil = jwtUtil;
         this.userRepository = userRepository;
@@ -26,20 +25,23 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
-        // Messages sent to clients will have /topic prefix
         config.enableSimpleBroker("/topic");
-        // Messages sent from clients to backend will have /app prefix
         config.setApplicationDestinationPrefixes("/app");
     }
 
+    
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+    // REAL WebSocket endpoint (required for STOMP)
         registry.addEndpoint("/chat")
-                .setAllowedOriginPatterns("*") // Allow all origins for testing
-                .withSockJS();                 // Enable SockJS fallback
-    }
+            .setAllowedOriginPatterns("*");
 
-    // Add JWT WebSocket authentication interceptor
+    // SockJS fallback
+        registry.addEndpoint("/chat")
+            .setAllowedOriginPatterns("*")
+            .withSockJS();
+   }
+
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
         registration.interceptors(new AuthChannelInterceptorAdapter(jwtUtil, userRepository));
