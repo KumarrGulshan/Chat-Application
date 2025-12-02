@@ -3,8 +3,7 @@ import { MdAttachFile, MdSend } from 'react-icons/md';
 import { useNavigate } from 'react-router';
 import { useChatContext } from '../Context/ChatContext.jsx';
 import SockJS from 'sockjs-client';
-import { baseURL } from '../config/AxiosHelper.js';
-import { Stomp } from '@stomp/stompjs';
+import { Client } from '@stomp/stompjs';
 import toast from 'react-hot-toast';
 import { getMessages } from '../services/RoomServices.js';
 import { timeAgo } from '../config/helper.js';
@@ -16,22 +15,22 @@ function ChatPage() {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState("");
     const chatBoxRef = useRef(null);
-    const [stompClient, setStompClient] = useState(null);
+    const stompClientRef = useRef(null);
 
     // Redirect if not connected
     useEffect(() => {
-        if (!connected || !token) navigate("/");
+        if (!connected || !token) navigate("/login");
     }, [connected, token]);
 
     // Load previous messages
     useEffect(() => {
-        if (!connected) return;
+        if (!connected || !roomId) return;
         async function loadMessages() {
             try {
-                const msgs = await getMessages(roomId, 0, 20);
-                setMessages(msgs);
-            } catch (error) {
-                console.error("Failed to load messages:", error);
+                const data = await getMessages(roomId, 0, 20);
+                setMessages(data);
+            } catch (err) {
+                console.error("Failed to load messages:", err);
                 toast.error("Failed to load messages");
             }
         }
@@ -43,65 +42,72 @@ function ChatPage() {
         if (chatBoxRef.current) {
             chatBoxRef.current.scroll({
                 top: chatBoxRef.current.scrollHeight,
-                behavior: 'smooth'
+                behavior: 'smooth',
             });
         }
     }, [messages]);
 
     // WebSocket connection
     useEffect(() => {
-        if (!connected || !token) return;
+        if (!token || !roomId) return;
 
-        const sock = new SockJS(`${baseURL}/chat`);
-        const client = Stomp.over(sock);
-
-        client.connect(
-            { Authorization: `Bearer ${token}` },
-            () => {
-                setStompClient(client);
+        const socket = new SockJS("http://localhost:8080/chat");
+        const client = new Client({
+            webSocketFactory: () => socket,
+            connectHeaders: { Authorization: `Bearer ${token}` },
+            debug: (str) => console.log("[STOMP]", str),
+            onConnect: () => {
                 toast.success("Connected to chat");
 
-                client.subscribe(
-                    `/topic/room/${roomId}`,
-                    (msg) => {
-                        const newMessage = JSON.parse(msg.body);
-                        setMessages(prev => [...prev, newMessage]);
-                    }
-                );
+                // Subscribe to room messages
+                client.subscribe(`/topic/room/${roomId}`, (msg) => {
+                    const newMessage = JSON.parse(msg.body);
+                    // Ensure timestamp exists
+                    if (!newMessage.timestamp) newMessage.timestamp = new Date().toISOString();
+                    setMessages((prev) => [...prev, newMessage]);
+                });
+
+                stompClientRef.current = client;
             },
-            (error) => {
-                console.error("WebSocket connection failed:", error);
-                toast.error("WebSocket connection failed");
-            }
-        );
+            onStompError: (frame) => {
+                console.error("STOMP error:", frame);
+                toast.error("WebSocket error");
+            },
+            onWebSocketClose: () => console.log("WebSocket closed"),
+        });
+
+        client.activate();
 
         // Cleanup on unmount
         return () => {
-            if (client && client.connected) client.disconnect();
+            if (stompClientRef.current) stompClientRef.current.deactivate();
         };
-    }, [roomId, connected, token]);
+    }, [roomId, token]);
 
     // Send message
     const sendMessage = () => {
-        if (!stompClient || !connected || !input.trim()) return;
-
-        const message = { content: input, roomId };
-        try {
-            stompClient.send(`/app/sendMessage/${roomId}`, {}, JSON.stringify(message));
-            setInput("");
-        } catch (err) {
-            console.error("Send message failed:", err);
-            toast.error("Message not sent");
+        if (!input.trim()) return;
+        if (!stompClientRef.current || !stompClientRef.current.active) {
+            console.log("STOMP client not connected");
+            return;
         }
+
+        const message = { content: input }; // Server will add sender/timestamp
+        stompClientRef.current.publish({
+            destination: `/app/sendMessage/${roomId}`,
+            body: JSON.stringify(message),
+        });
+
+        setInput("");
     };
 
     // Logout
     const handleLogout = () => {
-        if (stompClient && stompClient.connected) stompClient.disconnect();
+        if (stompClientRef.current) stompClientRef.current.deactivate();
         setConnected(false);
         setRoomId("");
         setCurrentUser("");
-        navigate("/");
+        navigate("/login");
     };
 
     return (
@@ -117,15 +123,15 @@ function ChatPage() {
             </header>
 
             <main ref={chatBoxRef} className='w-full pb-20 px-10 dark:bg-slate-700 mx-auto h-screen overflow-auto'>
-                {messages.map((message, index) => (
-                    <div key={index} className={`flex ${message.sender === currentUser ? "justify-end" : "justify-start"}`}>
-                        <div className={`my-2 ${message.sender === currentUser ? "bg-green-950" : "bg-gray-800"} p-1 max-w-xs rounded-xl`}>
+                {messages.map((msg, index) => (
+                    <div key={index} className={`flex ${msg.sender === currentUser ? "justify-end" : "justify-start"}`}>
+                        <div className={`my-2 ${msg.sender === currentUser ? "bg-green-950" : "bg-gray-800"} p-1 max-w-xs rounded-xl`}>
                             <div className='flex flex-row gap-2'>
                                 <img className='h-10 w-10' src="https://avatar.iran.liara.run/public/15" alt="" />
                                 <div className='flex flex-col gap-1'>
-                                    <p className='text-sm font-bold'>{message.sender}</p>
-                                    <p>{message.content}</p>
-                                    <p className='text-xs text-gray-400'>{timeAgo(message.timestamp)}</p>
+                                    <p className='text-sm font-bold'>{msg.sender}</p>
+                                    <p>{msg.content}</p>
+                                    <p className='text-xs text-gray-400'>{timeAgo(msg.timestamp)}</p>
                                 </div>
                             </div>
                         </div>
@@ -136,10 +142,9 @@ function ChatPage() {
             <div className='fixed bottom-4 w-full h-16'>
                 <div className='h-full pr-10 gap-4 rounded-full w-1/2 flex items-center justify-between mx-auto dark:bg-gray-900'>
                     <input
-                        type="text"
                         value={input}
-                        onChange={e => setInput(e.target.value)}
-                        onKeyDown={e => { if (e.key === "Enter") sendMessage(); }}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && sendMessage()}
                         placeholder='Type your message here..'
                         className='dark:bg-gray-900 px-5 py-2 w-full rounded-full h-full focus:outline-none'
                     />
@@ -147,6 +152,7 @@ function ChatPage() {
                         <button className='dark:bg-purple-600 rounded-lg h-10 w-10 flex justify-center items-center'>
                             <MdAttachFile size={20} />
                         </button>
+
                         <button onClick={sendMessage} className='dark:bg-green-600 rounded-lg h-10 w-10 flex justify-center items-center'>
                             <MdSend size={20} />
                         </button>
