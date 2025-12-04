@@ -26,18 +26,18 @@ function Login() {
     <div className="p-10 max-w-md mx-auto">
       <h2 className="text-xl mb-4">Login</h2>
       <input
-        className="w-full p-2 mb-2 border"
+        className="w-full px-4 py-2 dark:bg-gray-600 border dark:border-gray-600 rounded-lg text-white mb-2"
         placeholder="Username"
         onChange={(e) => setUsername(e.target.value)}
       />
       <input
-        className="w-full p-2 mb-2 border"
+        className="w-full px-4 py-2 dark:bg-gray-600 border dark:border-gray-600 rounded-lg text-white mb-2"
         placeholder="Password"
         type="password"
         onChange={(e) => setPassword(e.target.value)}
       />
       <button
-        className="w-full p-2 bg-blue-600 text-white"
+        className="w-full px-3 py-2 dark:bg-blue-500 hover:dark:bg-blue-800 rounded-lg"
         onClick={login}
       >
         Login
