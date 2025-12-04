@@ -2,16 +2,23 @@ import { useEffect, useRef, useState } from 'react';
 import { MdAttachFile, MdSend } from 'react-icons/md';
 import { useNavigate } from 'react-router';
 import { useChatContext } from '../Context/ChatContext.jsx';
-import SockJS from 'sockjs-client';
 import { Client } from '@stomp/stompjs';
 import toast from 'react-hot-toast';
 import { getMessages } from '../services/RoomServices.js';
 import { timeAgo } from '../config/helper.js';
 
 function ChatPage() {
-    const { roomId, currentUser, connected, token, setConnected, setRoomId, setCurrentUser } = useChatContext();
-    const navigate = useNavigate();
+    const {
+        roomId,
+        currentUser,
+        connected,
+        token,
+        setConnected,
+        setRoomId,
+        setCurrentUser
+    } = useChatContext();
 
+    const navigate = useNavigate();
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState("");
     const chatBoxRef = useRef(null);
@@ -49,36 +56,51 @@ function ChatPage() {
 
     // WebSocket connection
     useEffect(() => {
-        if (!token || !roomId) return;
+        console.log("🟦 CURRENT TOKEN = ", token);
 
-        const socket = new SockJS("http://localhost:8080/chat");
+        if (!token || !roomId) {
+            console.warn("Token or roomId missing — WebSocket not starting");
+            return;
+        }
+
         const client = new Client({
-            webSocketFactory: () => socket,
-            connectHeaders: { Authorization: `Bearer ${token}` },
-            debug: (str) => console.log("[STOMP]", str),
+            brokerURL: "ws://localhost:8080/ws-chat",
+            connectHeaders: {
+                Authorization: `Bearer ${token}`,
+            },
+            debug: (str) => console.log("[STOMP DEBUG]", str),
+
             onConnect: () => {
+                console.log("🟢 WebSocket Connected");
                 toast.success("Connected to chat");
 
                 // Subscribe to room messages
                 client.subscribe(`/topic/room/${roomId}`, (msg) => {
-                    const newMessage = JSON.parse(msg.body);
-                    // Ensure timestamp exists
-                    if (!newMessage.timestamp) newMessage.timestamp = new Date().toISOString();
-                    setMessages((prev) => [...prev, newMessage]);
+                    try {
+                        const newMessage = JSON.parse(msg.body);
+                        if (!newMessage.timestamp)
+                            newMessage.timestamp = new Date().toISOString();
+                        setMessages((prev) => [...prev, newMessage]);
+                    } catch (e) {
+                        console.error("Failed to parse message:", e);
+                    }
                 });
 
                 stompClientRef.current = client;
             },
+
             onStompError: (frame) => {
-                console.error("STOMP error:", frame);
-                toast.error("WebSocket error");
+                console.error("❌ STOMP Error:", frame);
+                toast.error("WebSocket authentication failed");
             },
-            onWebSocketClose: () => console.log("WebSocket closed"),
+
+            onWebSocketClose: () => {
+                console.log("🔴 WebSocket Closed");
+            },
         });
 
         client.activate();
 
-        // Cleanup on unmount
         return () => {
             if (stompClientRef.current) stompClientRef.current.deactivate();
         };
@@ -87,12 +109,17 @@ function ChatPage() {
     // Send message
     const sendMessage = () => {
         if (!input.trim()) return;
+
         if (!stompClientRef.current || !stompClientRef.current.active) {
-            console.log("STOMP client not connected");
+            console.error("❌ Cannot send — STOMP not connected");
+            toast.error("Not connected to chat");
             return;
         }
 
-        const message = { content: input }; // Server will add sender/timestamp
+        const message = {
+            content: input,
+        };
+
         stompClientRef.current.publish({
             destination: `/app/sendMessage/${roomId}`,
             body: JSON.stringify(message),

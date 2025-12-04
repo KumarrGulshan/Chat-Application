@@ -4,10 +4,9 @@ import com.substring.chat.chat_app_backend.entities.Message;
 import com.substring.chat.chat_app_backend.entities.Room;
 import com.substring.chat.chat_app_backend.playload.MessageRequest;
 import com.substring.chat.chat_app_backend.repository.RoomRepository;
-
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
-import org.springframework.messaging.handler.annotation.SendTo;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
 import java.security.Principal;
@@ -17,46 +16,56 @@ import java.time.LocalDateTime;
 public class ChatController {
 
     private final RoomRepository roomRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
-    public ChatController(RoomRepository roomRepository) {
+    public ChatController(RoomRepository roomRepository, SimpMessagingTemplate messagingTemplate) {
         this.roomRepository = roomRepository;
+        this.messagingTemplate = messagingTemplate;
     }
 
     @MessageMapping("/sendMessage/{roomId}")
-    @SendTo("/topic/room/{roomId}")
-    public Message sendMessage(
+    public void sendMessage(
             @DestinationVariable String roomId,
             MessageRequest request,
             Principal principal
     ) {
-        // 1️⃣ Ensure the user is authenticated
-        if (principal == null || principal.getName() == null) {
+
+        System.out.println("============ Incoming Message ============");
+        System.out.println("Principal        : " + principal);
+        System.out.println("Username         : " + (principal != null ? principal.getName() : "NULL"));
+        System.out.println("RoomId Received  : " + roomId);
+        System.out.println("Request Content  : " + request.getContent());
+        System.out.println("==========================================");
+
+        // 1️⃣ Authentication check
+        if (principal == null) {
             throw new RuntimeException("Unauthorized user!");
         }
+
         String currentUser = principal.getName();
 
-        // 2️⃣ Check if room exists
+        // 2️⃣ Validate room
         Room room = roomRepository.findByRoomId(roomId);
         if (room == null) {
             throw new RuntimeException("Room not found!");
         }
 
-        // 3️⃣ Check if user is a member of the room
+        // 3️⃣ Check membership
         if (!room.getMembers().contains(currentUser)) {
             throw new RuntimeException("You are not a member of this room!");
         }
 
-        // 4️⃣ Create the new message
+        // 4️⃣ Create message
         Message message = new Message();
+        message.setSender(currentUser);
         message.setContent(request.getContent());
-        message.setSender(currentUser);  // Do NOT trust client-side sender
         message.setTimestamp(LocalDateTime.now());
 
-        // 5️⃣ Save the message in the room
+        // 5️⃣ Save to DB
         room.getMessages().add(message);
         roomRepository.save(room);
 
-        // 6️⃣ Return message to broadcast to subscribers
-        return message;
+        // 6️⃣ Broadcast message to subscribers
+        messagingTemplate.convertAndSend("/topic/room/" + roomId, message);
     }
 }
